@@ -4,7 +4,7 @@ import logging
 import os
 import re
 import time
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 import boto3
 import botocore.auth
@@ -20,6 +20,7 @@ from pytest_httpserver import HTTPServer
 
 from localstack import config
 from localstack.aws.accounts import get_aws_account_id
+from localstack.constants import TEST_AWS_ACCESS_KEY_ID, TEST_AWS_SECRET_ACCESS_KEY
 from localstack.testing.aws.cloudformation_utils import load_template_file, render_template
 from localstack.testing.aws.util import get_lambda_logs
 from localstack.utils import testutil
@@ -66,21 +67,28 @@ if TYPE_CHECKING:
     from mypy_boto3_ssm import SSMClient
     from mypy_boto3_stepfunctions import SFNClient
     from mypy_boto3_sts import STSClient
+    from mypy_boto3_transcribe import TranscribeClient
 
 LOG = logging.getLogger(__name__)
 
 
-def _client(service, region_name=None):
-    if os.environ.get("TEST_TARGET") == "AWS_CLOUD":
-        return boto3.client(service, region_name=region_name)
+def _client(service, region_name=None, *, additional_config=None):
+    config = botocore.config.Config()
+
     # can't set the timeouts to 0 like in the AWS CLI because the underlying http client requires values > 0
-    config = (
-        botocore.config.Config(
-            connect_timeout=1_000, read_timeout=1_000, retries={"total_max_attempts": 1}
+    if os.environ.get("TEST_DISABLE_RETRIES_AND_TIMEOUTS"):
+        config = config.merge(
+            botocore.config.Config(
+                connect_timeout=1_000, read_timeout=1_000, retries={"total_max_attempts": 1}
+            )
         )
-        if os.environ.get("TEST_DISABLE_RETRIES_AND_TIMEOUTS")
-        else None
-    )
+
+    if additional_config:
+        config = config.merge(additional_config)
+
+    if os.environ.get("TEST_TARGET") == "AWS_CLOUD":
+        return boto3.client(service, region_name=region_name, config=config)
+
     return aws_stack.create_external_boto_client(service, config=config, region_name=region_name)
 
 
@@ -195,6 +203,41 @@ def iam_client() -> "IAMClient":
 @pytest.fixture(scope="class")
 def s3_client() -> "S3Client":
     return _client("s3")
+
+
+@pytest.fixture(scope="class")
+def s3_vhost_client() -> "S3Client":
+    boto_config = botocore.config.Config(s3={"addressing_style": "virtual"})
+    if os.environ.get("TEST_TARGET") == "AWS_CLOUD":
+        return boto3.client("s3", config=boto_config)
+    # can't set the timeouts to 0 like in the AWS CLI because the underlying http client requires values > 0
+    if os.environ.get("TEST_DISABLE_RETRIES_AND_TIMEOUTS"):
+        external_boto_config = botocore.config.Config(
+            connect_timeout=1_000, read_timeout=1_000, retries={"total_max_attempts": 1}
+        )
+        boto_config = boto_config.merge(external_boto_config)
+
+    return aws_stack.create_external_boto_client("s3", config=boto_config)
+
+
+@pytest.fixture(scope="class")
+def s3_presigned_client() -> "S3Client":
+    if os.environ.get("TEST_TARGET") == "AWS_CLOUD":
+        return _client("s3")
+    # can't set the timeouts to 0 like in the AWS CLI because the underlying http client requires values > 0
+    boto_config = (
+        botocore.config.Config(
+            connect_timeout=1_000, read_timeout=1_000, retries={"total_max_attempts": 1}
+        )
+        if os.environ.get("TEST_DISABLE_RETRIES_AND_TIMEOUTS")
+        else None
+    )
+    return aws_stack.connect_to_service(
+        "s3",
+        config=boto_config,
+        aws_access_key_id=TEST_AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=TEST_AWS_SECRET_ACCESS_KEY,
+    )
 
 
 @pytest.fixture(scope="class")
@@ -322,16 +365,36 @@ def route53_client() -> "Route53Client":
     return _client("route53")
 
 
+@pytest.fixture(scope="class")
+def transcribe_client() -> "TranscribeClient":
+    return _client("transcribe")
+
+
 @pytest.fixture
-def dynamodb_create_table_with_parameters(dynamodb_client):
+def dynamodb_wait_for_table_active(dynamodb_client):
+    def wait_for_table_active(table_name: str, client=None):
+        def wait():
+            return (client or dynamodb_client).describe_table(TableName=table_name)["Table"][
+                "TableStatus"
+            ] == "ACTIVE"
+
+        poll_condition(wait, timeout=30)
+
+    return wait_for_table_active
+
+
+@pytest.fixture
+def dynamodb_create_table_with_parameters(dynamodb_client, dynamodb_wait_for_table_active):
     tables = []
 
     def factory(**kwargs):
         if "TableName" not in kwargs:
-            kwargs["TableName"] = "test-table-%s" % short_uid()
+            kwargs["TableName"] = f"test-table-{short_uid()}"
 
         tables.append(kwargs["TableName"])
-        return dynamodb_client.create_table(**kwargs)
+        response = dynamodb_client.create_table(**kwargs)
+        dynamodb_wait_for_table_active(kwargs["TableName"])
+        return response
 
     yield factory
 
@@ -339,20 +402,14 @@ def dynamodb_create_table_with_parameters(dynamodb_client):
     for table in tables:
         try:
             # table has to be in ACTIVE state before deletion
-            def wait_for_table_created():
-                return (
-                    dynamodb_client.describe_table(TableName=table)["Table"]["TableStatus"]
-                    == "ACTIVE"
-                )
-
-            poll_condition(wait_for_table_created, timeout=30)
+            dynamodb_wait_for_table_active(table)
             dynamodb_client.delete_table(TableName=table)
         except Exception as e:
             LOG.debug("error cleaning up table %s: %s", table, e)
 
 
 @pytest.fixture
-def dynamodb_create_table(dynamodb_client):
+def dynamodb_create_table(dynamodb_client, dynamodb_wait_for_table_active):
     # beware, this swallows exception in create_dynamodb_table utility function
     tables = []
 
@@ -373,13 +430,7 @@ def dynamodb_create_table(dynamodb_client):
     for table in tables:
         try:
             # table has to be in ACTIVE state before deletion
-            def wait_for_table_created():
-                return (
-                    dynamodb_client.describe_table(TableName=table)["Table"]["TableStatus"]
-                    == "ACTIVE"
-                )
-
-            poll_condition(wait_for_table_created, timeout=30)
+            dynamodb_wait_for_table_active(table)
             dynamodb_client.delete_table(TableName=table)
         except Exception as e:
             LOG.debug("error cleaning up table %s: %s", table, e)
@@ -666,6 +717,34 @@ def route53_hosted_zone(route53_client):
 
 
 @pytest.fixture
+def transcribe_create_job(transcribe_client, s3_client, s3_bucket):
+    def _create_job(audio_file: str, params: Optional[dict[str, Any]] = None) -> str:
+        s3_key = "test-clip.wav"
+
+        if not params:
+            params = {}
+
+        if "TranscriptionJobName" not in params:
+            params["TranscriptionJobName"] = f"test-transcribe-{short_uid()}"
+
+        if "LanguageCode" not in params:
+            params["LanguageCode"] = "en-GB"
+
+        if "Media" not in params:
+            params["Media"] = {"MediaFileUri": f"s3://{s3_bucket}/{s3_key}"}
+
+        # upload test wav to a s3 bucket
+        with open(audio_file, "rb") as f:
+            s3_client.upload_fileobj(f, s3_bucket, s3_key)
+
+        transcribe_client.start_transcription_job(**params)
+
+        return params["TranscriptionJobName"]
+
+    yield _create_job
+
+
+@pytest.fixture
 def kinesis_create_stream(kinesis_client):
     stream_names = []
 
@@ -700,6 +779,35 @@ def wait_for_stream_ready(kinesis_client):
     return _wait_for_stream_ready
 
 
+@pytest.fixture
+def wait_for_delivery_stream_ready(firehose_client):
+    def _wait_for_stream_ready(delivery_stream_name: str):
+        def is_stream_ready():
+            describe_stream_response = firehose_client.describe_delivery_stream(
+                DeliveryStreamName=delivery_stream_name
+            )
+            return (
+                describe_stream_response["DeliveryStreamDescription"]["DeliveryStreamStatus"]
+                == "ACTIVE"
+            )
+
+        poll_condition(is_stream_ready)
+
+    return _wait_for_stream_ready
+
+
+@pytest.fixture
+def wait_for_dynamodb_stream_ready(dynamodbstreams_client):
+    def _wait_for_stream_ready(stream_arn: str):
+        def is_stream_ready():
+            describe_stream_response = dynamodbstreams_client.describe_stream(StreamArn=stream_arn)
+            return describe_stream_response["StreamDescription"]["StreamStatus"] == "ENABLED"
+
+        poll_condition(is_stream_ready)
+
+    return _wait_for_stream_ready
+
+
 @pytest.fixture()
 def kms_create_key(kms_client):
     key_ids = []
@@ -720,6 +828,32 @@ def kms_create_key(kms_client):
             kms_client.schedule_key_deletion(KeyId=key_id)
         except Exception as e:
             LOG.debug("error cleaning up KMS key %s: %s", key_id, e)
+
+
+# kms_create_key fixture is used here not just to be able to create aliases without a key specified,
+# but also to make sure that kms_create_key gets executed before and teared down after kms_create_alias -
+# to make sure that we clean up aliases before keys get cleaned up.
+@pytest.fixture()
+def kms_create_alias(kms_client, kms_create_key):
+    aliases = []
+
+    def _create_alias(**kwargs):
+        if "AliasName" not in kwargs:
+            kwargs["AliasName"] = f"alias/{short_uid()}"
+        if "TargetKeyId" not in kwargs:
+            kwargs["TargetKeyId"] = kms_create_key()["KeyId"]
+
+        kms_client.create_alias(**kwargs)
+        aliases.append(kwargs["AliasName"])
+        return kwargs["AliasName"]
+
+    yield _create_alias
+
+    for alias in aliases:
+        try:
+            kms_client.delete_alias(AliasName=alias)
+        except Exception as e:
+            LOG.debug("error cleaning up KMS alias %s: %s", alias, e)
 
 
 @pytest.fixture
@@ -873,7 +1007,9 @@ def deploy_cfn_template(
         template_path: Optional[str | os.PathLike] = None,
         template_mapping: Optional[Dict[str, any]] = None,
         parameters: Optional[Dict[str, str]] = None,
+        max_wait: Optional[int] = None,
     ) -> DeployResult:
+
         if is_update:
             assert stack_name
         stack_name = stack_name or f"stack-{short_uid()}"
@@ -902,7 +1038,8 @@ def deploy_cfn_template(
 
         assert wait_until(is_change_set_created_and_available(change_set_id), _max_wait=60)
         cfn_client.execute_change_set(ChangeSetName=change_set_id)
-        assert wait_until(is_change_set_finished(change_set_id), _max_wait=60)
+        # TODO: potentially poll for ExecutionStatus=ROLLBACK_COMPLETE here as well, to catch errors early on
+        assert wait_until(is_change_set_finished(change_set_id), _max_wait=max_wait or 60)
 
         outputs = cfn_client.describe_stacks(StackName=stack_id)["Stacks"][0].get("Outputs", [])
 
@@ -919,7 +1056,7 @@ def deploy_cfn_template(
                     == "DELETE_COMPLETE"
                 )
 
-            assert wait_until(_await_stack_delete, _max_wait=60)
+            assert wait_until(_await_stack_delete, _max_wait=max_wait or 60)
             # TODO: fix in localstack. stack should only be in DELETE_COMPLETE state after all resources have been deleted
             time.sleep(2)
 
@@ -1002,9 +1139,13 @@ def _has_stack_status(cfn_client, statuses: List[str]):
 
 @pytest.fixture
 def is_change_set_finished(cfn_client):
-    def _is_change_set_finished(change_set_id: str):
+    def _is_change_set_finished(change_set_id: str, stack_name: Optional[str] = None):
         def _inner():
-            check_set = cfn_client.describe_change_set(ChangeSetName=change_set_id)
+            kwargs = {"ChangeSetName": change_set_id}
+            if stack_name:
+                kwargs["StackName"] = stack_name
+
+            check_set = cfn_client.describe_change_set(**kwargs)
             return check_set.get("ExecutionStatus") == "EXECUTE_COMPLETE"
 
         return _inner
@@ -1014,14 +1155,16 @@ def is_change_set_finished(cfn_client):
 
 @pytest.fixture
 def wait_until_lambda_ready(lambda_client):
-    def _wait_until_ready(function_name: str, qualifier: str = None):
+    def _wait_until_ready(function_name: str, qualifier: str = None, client=None):
+        client = client or lambda_client
+
         def _is_not_pending():
             kwargs = {}
             if qualifier:
                 kwargs["Qualifier"] = qualifier
             try:
                 result = (
-                    lambda_client.get_function(FunctionName=function_name)["Configuration"]["State"]
+                    client.get_function(FunctionName=function_name)["Configuration"]["State"]
                     != "Pending"
                 )
                 LOG.debug(f"lambda state result: {result=}")
@@ -1072,12 +1215,13 @@ role_policy = """
 
 @pytest.fixture
 def create_lambda_function(lambda_client, logs_client, iam_client, wait_until_lambda_ready):
-    lambda_arns = []
+    lambda_arns_and_clients = []
     role_names_policy_arns = []
     log_groups = []
 
     def _create_lambda_function(*args, **kwargs):
-        kwargs["client"] = lambda_client
+        client = kwargs.get("client") or lambda_client
+        kwargs["client"] = client
         func_name = kwargs.get("func_name")
         assert func_name
         del kwargs["func_name"]
@@ -1097,8 +1241,8 @@ def create_lambda_function(lambda_client, logs_client, iam_client, wait_until_la
 
         def _create_function():
             resp = testutil.create_lambda_function(func_name, **kwargs)
-            lambda_arns.append(resp["CreateFunctionResponse"]["FunctionArn"])
-            wait_until_lambda_ready(function_name=func_name)
+            lambda_arns_and_clients.append((resp["CreateFunctionResponse"]["FunctionArn"], client))
+            wait_until_lambda_ready(function_name=func_name, client=client)
             log_group_name = f"/aws/lambda/{func_name}"
             log_groups.append(log_group_name)
             return resp
@@ -1109,9 +1253,9 @@ def create_lambda_function(lambda_client, logs_client, iam_client, wait_until_la
 
     yield _create_lambda_function
 
-    for arn in lambda_arns:
+    for arn, client in lambda_arns_and_clients:
         try:
-            lambda_client.delete_function(FunctionName=arn)
+            client.delete_function(FunctionName=arn)
         except Exception:
             LOG.debug(f"Unable to delete function {arn=} in cleanup")
 
@@ -1412,6 +1556,57 @@ def create_iam_role_with_policy(iam_client):
 
 
 @pytest.fixture
+def firehose_create_delivery_stream(firehose_client, wait_for_delivery_stream_ready):
+    delivery_streams = {}
+
+    def _create_delivery_stream(**kwargs):
+        if "DeliveryStreamName" not in kwargs:
+            kwargs["DeliveryStreamName"] = f"test-delivery-stream-{short_uid()}"
+
+        delivery_stream = firehose_client.create_delivery_stream(**kwargs)
+        delivery_streams.update({kwargs["DeliveryStreamName"]: delivery_stream})
+        wait_for_delivery_stream_ready(kwargs["DeliveryStreamName"])
+        return delivery_stream
+
+    yield _create_delivery_stream
+
+    for delivery_stream_name in delivery_streams.keys():
+        firehose_client.delete_delivery_stream(DeliveryStreamName=delivery_stream_name)
+
+
+@pytest.fixture
+def events_create_rule(events_client):
+    rules = []
+
+    def _create_rule(**kwargs):
+        rule_name = kwargs["Name"]
+        bus_name = kwargs.get("EventBusName", "")
+        pattern = kwargs.get("EventPattern", {})
+        schedule = kwargs.get("ScheduleExpression", "")
+        rule_arn = events_client.put_rule(
+            Name=rule_name,
+            EventBusName=bus_name,
+            EventPattern=json.dumps(pattern),
+            ScheduleExpression=schedule,
+        )["RuleArn"]
+        rules.append({"name": rule_name, "bus": bus_name})
+        return rule_arn
+
+    yield _create_rule
+
+    for rule in rules:
+        targets = events_client.list_targets_by_rule(Rule=rule["name"], EventBusName=rule["bus"])[
+            "Targets"
+        ]
+
+        targetIds = [target["Id"] for target in targets]
+        if len(targetIds) > 0:
+            events_client.remove_targets(Rule=rule["name"], EventBusName=rule["bus"], Ids=targetIds)
+
+        events_client.delete_rule(Name=rule["name"], EventBusName=rule["bus"])
+
+
+@pytest.fixture
 def cleanups(ec2_client):
     cleanup_fns = []
 
@@ -1422,6 +1617,12 @@ def cleanups(ec2_client):
             cleanup_callback()
         except Exception as e:
             LOG.warning("Failed to execute cleanup", exc_info=e)
+
+
+@pytest.fixture(scope="session")
+def account_id():
+    sts_client = _client("sts")
+    return sts_client.get_caller_identity()["Account"]
 
 
 @pytest.hookimpl

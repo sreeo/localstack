@@ -77,10 +77,10 @@ from localstack.services.firehose.mappers import (
     convert_source_config_to_desc,
 )
 from localstack.services.generic_proxy import RegionBackend
-from localstack.utils.analytics import event_publisher
 from localstack.utils.aws import aws_stack
 from localstack.utils.aws.aws_stack import (
     connect_to_resource,
+    extract_region_from_arn,
     firehose_stream_arn,
     get_search_db_connection,
     s3_bucket_name,
@@ -97,6 +97,7 @@ from localstack.utils.common import (
     truncate,
 )
 from localstack.utils.kinesis import kinesis_connector
+from localstack.utils.kinesis.kinesis_connector import KinesisProcessorThread
 from localstack.utils.run import run_for_max_seconds
 from localstack.utils.tagging import TaggingService
 
@@ -118,11 +119,13 @@ def next_sequence_number() -> int:
 class FirehoseBackend(RegionBackend):
     # maps delivery stream names to DeliveryStreamDescription
     delivery_streams: Dict[str, DeliveryStreamDescription]
+    kinesis_listeners: Dict[str, KinesisProcessorThread]
     # static tagging service instance
     TAGS = TaggingService()
 
     def __init__(self):
         self.delivery_streams = {}
+        self.kinesis_listeners = {}
 
 
 def _get_description_or_raise_not_found(
@@ -217,18 +220,11 @@ class FirehoseProvider(FirehoseApi):
             HasMoreDestinations=False,
             VersionId="1",
             CreateTimestamp=datetime.now(),
-            LastUpdateTimestamp=datetime.now(),
             Destinations=destinations,
             Source=convert_source_config_to_desc(kinesis_stream_source_configuration),
         )
         FirehoseBackend.TAGS.tag_resource(stream["DeliveryStreamARN"], tags)
         region.delivery_streams[delivery_stream_name] = stream
-
-        # record event
-        event_publisher.fire_event(
-            event_publisher.EVENT_FIREHOSE_CREATE_STREAM,
-            payload={"n": event_publisher.get_hash(delivery_stream_name)},
-        )
 
         if delivery_stream_type == DeliveryStreamType.KinesisStreamAsSource:
             if not kinesis_stream_source_configuration:
@@ -239,13 +235,14 @@ class FirehoseProvider(FirehoseApi):
             def _startup():
                 stream["DeliveryStreamStatus"] = DeliveryStreamStatus.CREATING
                 try:
-                    kinesis_connector.listen_to_kinesis(
+                    process = kinesis_connector.listen_to_kinesis(
                         stream_name=kinesis_stream_name,
                         fh_d_stream=delivery_stream_name,
                         listener_func=self._process_records,
                         wait_until_started=True,
                         ddb_lease_table_suffix="-firehose",
                     )
+                    region.kinesis_listeners[delivery_stream_name] = process
                     stream["DeliveryStreamStatus"] = DeliveryStreamStatus.ACTIVE
                 except Exception as e:
                     LOG.warning(
@@ -268,12 +265,10 @@ class FirehoseProvider(FirehoseApi):
             raise ResourceNotFoundException(
                 f"Firehose {delivery_stream_name} under account {context.account_id} " f"not found."
             )
-
-        # record event
-        event_publisher.fire_event(
-            event_publisher.EVENT_FIREHOSE_DELETE_STREAM,
-            payload={"n": event_publisher.get_hash(delivery_stream_name)},
-        )
+        kinesis_process = region.kinesis_listeners.pop(delivery_stream_name, None)
+        if kinesis_process:
+            LOG.debug("Stopping kinesis listener for %s", delivery_stream_name)
+            kinesis_process.stop()
 
         return DeleteDeliveryStreamOutput()
 
@@ -605,7 +600,6 @@ class FirehoseProvider(FirehoseApi):
         if proc_type == "Lambda":
             lambda_arn = parameters.get("LambdaArn")
             # TODO: add support for other parameters, e.g., NumberOfRetries, BufferSizeInMBs, BufferIntervalInSeconds, ...
-            client = aws_stack.connect_to_service("lambda")
             records = keys_to_lower(records)
             # Convert the record data to string (for json serialization)
             for record in records:
@@ -615,6 +609,9 @@ class FirehoseProvider(FirehoseApi):
                     record["Data"] = to_str(record["Data"])
             event = {"records": records}
             event = to_bytes(json.dumps(event))
+            client = aws_stack.connect_to_service(
+                "lambda", region_name=extract_region_from_arn(lambda_arn)
+            )
             response = client.invoke(FunctionName=lambda_arn, Payload=event)
             result = response.get("Payload").read()
             result = json.loads(to_str(result))

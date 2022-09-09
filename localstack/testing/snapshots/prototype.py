@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 
 from botocore.response import StreamingBody
 from deepdiff import DeepDiff
+from jsonpath_ng import DatumInContext
 from jsonpath_ng.ext import parse
 
 from localstack.testing.snapshots.transformer import (
@@ -27,7 +28,7 @@ class SnapshotMatchResult:
     def __init__(self, a: dict, b: dict, key: str = ""):
         self.a = a
         self.b = b
-        self.result = DeepDiff(a, b, verbose_level=2)
+        self.result = DeepDiff(a, b, verbose_level=2, view="tree")
         self.key = key
 
     def __bool__(self) -> bool:
@@ -138,9 +139,9 @@ class SnapshotSession:
 
         self.called_keys.add(key)
 
-        self.observed_state[
-            key
-        ] = obj  # TODO: track them separately since the transformation is now done *just* before asserting
+        # order the obj to guarantee reference replacement works as expected
+        self.observed_state[key] = self._order_dict(obj)
+        # TODO: track them separately since the transformation is now done *just* before asserting
 
         if not self.update and (not self.recorded_state or not self.recorded_state.get(key)):
             raise Exception("Please run the test first with --snapshot-update")
@@ -217,7 +218,6 @@ class SnapshotSession:
     def _transform(self, tmp: dict) -> dict:
         """build a persistable state definition that can later be compared against"""
         self._transform_dict_to_parseable_values(tmp)
-
         if not self.update:
             self._remove_skip_verification_paths(tmp)
 
@@ -239,8 +239,26 @@ class SnapshotSession:
 
         return tmp
 
-    # LEGACY API
+    def _order_dict(self, response) -> dict:
+        if isinstance(response, dict):
+            ordered_dict = {}
+            for key, val in sorted(response.items()):
+                if isinstance(val, dict):
+                    ordered_dict[key] = self._order_dict(val)
+                elif isinstance(val, list):
+                    ordered_dict[key] = [self._order_dict(entry) for entry in val]
+                else:
+                    ordered_dict[key] = val
 
+            # put the ResponseMetadata back at the end of the response
+            if "ResponseMetadata" in ordered_dict:
+                ordered_dict["ResponseMetadata"] = ordered_dict.pop("ResponseMetadata")
+
+            return ordered_dict
+        else:
+            return response
+
+    # LEGACY API
     def register_replacement(self, pattern: Pattern[str], value: str):
         self.add_transformer(RegexTransformer(pattern, value))
 
@@ -264,10 +282,21 @@ class SnapshotSession:
 
     def _remove_skip_verification_paths(self, tmp: Dict):
         """Removes all keys from the dict, that match the given json-paths in self.skip_verification_path"""
+
+        def build_full_path_nodes(field_match: DatumInContext):
+            """Traverse the matched Datum to build the path field by field"""
+            full_path_nodes = [str(field_match.path)]
+            next_node = field_match
+            while next_node.context is not None:
+                full_path_nodes.append(str(next_node.context.path))
+                next_node = next_node.context
+
+            return full_path_nodes[::-1][1:]  # reverse the list and remove Root()/$
+
         for path in self.skip_verification_paths:
             matches = parse(path).find(tmp) or []
             for m in matches:
-                full_path = str(m.full_path).split(".")
+                full_path = build_full_path_nodes(m)
                 helper = tmp
                 if len(full_path) > 1:
                     for p in full_path[:-1]:

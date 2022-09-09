@@ -213,7 +213,8 @@ def get_stage_variables(context: ApiInvocationContext) -> Optional[Dict[str, str
     if not context.stage:
         return {}
 
-    api_gateway_client = aws_stack.connect_to_service("apigateway", region_name=context.region_name)
+    region_name = get_api_region(context.api_id)
+    api_gateway_client = aws_stack.connect_to_service("apigateway", region_name=region_name)
     try:
         response = api_gateway_client.get_stage(restApiId=context.api_id, stageName=context.stage)
         return response.get("variables")
@@ -388,7 +389,7 @@ def extract_path_params(path: str, extracted_path: str) -> Dict[str, str]:
     return path_params
 
 
-def extract_query_string_params(path: str) -> list[str, Dict[str, str]]:
+def extract_query_string_params(path: str) -> Tuple[str, Dict[str, str]]:
     parsed_path = urlparse.urlparse(path)
     path = parsed_path.path
     parsed_query_string_params = urlparse.parse_qs(parsed_path.query)
@@ -400,9 +401,8 @@ def extract_query_string_params(path: str) -> list[str, Dict[str, str]]:
         else:
             query_string_params[query_param_name] = query_param_values
 
-    # strip trailing slashes from path to fix downstream lookups
-    path = path.rstrip("/") or "/"
-    return [path, query_string_params]
+    path = path or "/"
+    return path, query_string_params
 
 
 def get_cors_response(headers):
@@ -657,6 +657,7 @@ def import_api_from_openapi_spec(rest_api: RestAPI, body: Dict, query_params: Di
         child_id = create_resource_id()
         rel_path = rel_path or "/"
         resource = Resource(
+            account_id=rest_api.account_id,
             resource_id=child_id,
             region_name=rest_api.region_name,
             api_id=rest_api.id,
@@ -761,7 +762,7 @@ def get_target_resource_details(invocation_context: ApiInvocationContext) -> Tup
     path_map = get_rest_api_paths(
         rest_api_id=invocation_context.api_id, region_name=invocation_context.region_name
     )
-    relative_path = invocation_context.invocation_path
+    relative_path = invocation_context.invocation_path.rstrip("/") or "/"
     try:
         extracted_path, resource = get_resource_for_path(path=relative_path, path_map=path_map)
         invocation_context.resource = resource
@@ -897,9 +898,10 @@ def set_api_id_stage_invocation_path(
 
 def get_api_region(api_id: str) -> Optional[str]:
     """Return the region name for the given REST API ID"""
-    for region_name, region in apigateway_backends.items():
-        if api_id in region.apis:
-            return region_name
+    for account_id, account in apigateway_backends.items():
+        for region_name, region in account.items():
+            if api_id in region.apis:
+                return region_name
 
 
 def extract_api_id_from_hostname_in_url(hostname: str) -> str:

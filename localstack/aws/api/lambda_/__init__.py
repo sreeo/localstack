@@ -1,6 +1,6 @@
 import sys
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import IO, Dict, Iterable, List, Optional, Union
 
 if sys.version_info >= (3, 8):
     from typing import TypedDict
@@ -256,36 +256,42 @@ class CodeSigningConfigNotFoundException(ServiceException):
     code: str = "CodeSigningConfigNotFoundException"
     sender_fault: bool = False
     status_code: int = 404
+    Type: Optional[String]
 
 
 class CodeStorageExceededException(ServiceException):
     code: str = "CodeStorageExceededException"
     sender_fault: bool = False
     status_code: int = 400
+    Type: Optional[String]
 
 
 class CodeVerificationFailedException(ServiceException):
     code: str = "CodeVerificationFailedException"
     sender_fault: bool = False
     status_code: int = 400
+    Type: Optional[String]
 
 
 class EC2AccessDeniedException(ServiceException):
     code: str = "EC2AccessDeniedException"
     sender_fault: bool = False
     status_code: int = 502
+    Type: Optional[String]
 
 
 class EC2ThrottledException(ServiceException):
     code: str = "EC2ThrottledException"
     sender_fault: bool = False
     status_code: int = 502
+    Type: Optional[String]
 
 
 class EC2UnexpectedException(ServiceException):
     code: str = "EC2UnexpectedException"
     sender_fault: bool = False
     status_code: int = 502
+    Type: Optional[String]
     EC2ErrorCode: Optional[String]
 
 
@@ -293,156 +299,182 @@ class EFSIOException(ServiceException):
     code: str = "EFSIOException"
     sender_fault: bool = False
     status_code: int = 410
+    Type: Optional[String]
 
 
 class EFSMountConnectivityException(ServiceException):
     code: str = "EFSMountConnectivityException"
     sender_fault: bool = False
     status_code: int = 408
+    Type: Optional[String]
 
 
 class EFSMountFailureException(ServiceException):
     code: str = "EFSMountFailureException"
     sender_fault: bool = False
     status_code: int = 403
+    Type: Optional[String]
 
 
 class EFSMountTimeoutException(ServiceException):
     code: str = "EFSMountTimeoutException"
     sender_fault: bool = False
     status_code: int = 408
+    Type: Optional[String]
 
 
 class ENILimitReachedException(ServiceException):
     code: str = "ENILimitReachedException"
     sender_fault: bool = False
     status_code: int = 502
+    Type: Optional[String]
 
 
 class InvalidCodeSignatureException(ServiceException):
     code: str = "InvalidCodeSignatureException"
     sender_fault: bool = False
     status_code: int = 400
+    Type: Optional[String]
 
 
 class InvalidParameterValueException(ServiceException):
     code: str = "InvalidParameterValueException"
     sender_fault: bool = False
     status_code: int = 400
+    Type: Optional[String]
 
 
 class InvalidRequestContentException(ServiceException):
     code: str = "InvalidRequestContentException"
     sender_fault: bool = False
     status_code: int = 400
+    Type: Optional[String]
 
 
 class InvalidRuntimeException(ServiceException):
     code: str = "InvalidRuntimeException"
     sender_fault: bool = False
     status_code: int = 502
+    Type: Optional[String]
 
 
 class InvalidSecurityGroupIDException(ServiceException):
     code: str = "InvalidSecurityGroupIDException"
     sender_fault: bool = False
     status_code: int = 502
+    Type: Optional[String]
 
 
 class InvalidSubnetIDException(ServiceException):
     code: str = "InvalidSubnetIDException"
     sender_fault: bool = False
     status_code: int = 502
+    Type: Optional[String]
 
 
 class InvalidZipFileException(ServiceException):
     code: str = "InvalidZipFileException"
     sender_fault: bool = False
     status_code: int = 502
+    Type: Optional[String]
 
 
 class KMSAccessDeniedException(ServiceException):
     code: str = "KMSAccessDeniedException"
     sender_fault: bool = False
     status_code: int = 502
+    Type: Optional[String]
 
 
 class KMSDisabledException(ServiceException):
     code: str = "KMSDisabledException"
     sender_fault: bool = False
     status_code: int = 502
+    Type: Optional[String]
 
 
 class KMSInvalidStateException(ServiceException):
     code: str = "KMSInvalidStateException"
     sender_fault: bool = False
     status_code: int = 502
+    Type: Optional[String]
 
 
 class KMSNotFoundException(ServiceException):
     code: str = "KMSNotFoundException"
     sender_fault: bool = False
     status_code: int = 502
+    Type: Optional[String]
 
 
 class PolicyLengthExceededException(ServiceException):
     code: str = "PolicyLengthExceededException"
     sender_fault: bool = False
     status_code: int = 400
+    Type: Optional[String]
 
 
 class PreconditionFailedException(ServiceException):
     code: str = "PreconditionFailedException"
     sender_fault: bool = False
     status_code: int = 412
+    Type: Optional[String]
 
 
 class ProvisionedConcurrencyConfigNotFoundException(ServiceException):
     code: str = "ProvisionedConcurrencyConfigNotFoundException"
     sender_fault: bool = False
     status_code: int = 404
+    Type: Optional[String]
 
 
 class RequestTooLargeException(ServiceException):
     code: str = "RequestTooLargeException"
     sender_fault: bool = False
     status_code: int = 413
+    Type: Optional[String]
 
 
 class ResourceConflictException(ServiceException):
     code: str = "ResourceConflictException"
     sender_fault: bool = False
     status_code: int = 409
+    Type: Optional[String]
 
 
 class ResourceInUseException(ServiceException):
     code: str = "ResourceInUseException"
     sender_fault: bool = False
     status_code: int = 400
+    Type: Optional[String]
 
 
 class ResourceNotFoundException(ServiceException):
     code: str = "ResourceNotFoundException"
     sender_fault: bool = False
     status_code: int = 404
+    Type: Optional[String]
 
 
 class ResourceNotReadyException(ServiceException):
     code: str = "ResourceNotReadyException"
     sender_fault: bool = False
     status_code: int = 502
+    Type: Optional[String]
 
 
 class ServiceException(ServiceException):
     code: str = "ServiceException"
     sender_fault: bool = False
     status_code: int = 500
+    Type: Optional[String]
 
 
 class SubnetIPAddressLimitReachedException(ServiceException):
     code: str = "SubnetIPAddressLimitReachedException"
     sender_fault: bool = False
     status_code: int = 502
+    Type: Optional[String]
 
 
 class TooManyRequestsException(ServiceException):
@@ -450,6 +482,7 @@ class TooManyRequestsException(ServiceException):
     sender_fault: bool = False
     status_code: int = 429
     retryAfterSeconds: Optional[String]
+    Type: Optional[String]
     Reason: Optional[ThrottleReason]
 
 
@@ -457,6 +490,7 @@ class UnsupportedMediaTypeException(ServiceException):
     code: str = "UnsupportedMediaTypeException"
     sender_fault: bool = False
     status_code: int = 415
+    Type: Optional[String]
 
 
 Long = int
@@ -537,6 +571,10 @@ class AllowedPublishers(TypedDict, total=False):
     SigningProfileVersionArns: SigningProfileVersionArns
 
 
+class AmazonManagedKafkaEventSourceConfig(TypedDict, total=False):
+    ConsumerGroupId: Optional[URI]
+
+
 ArchitecturesList = List[Architecture]
 Blob = bytes
 BlobStream = bytes
@@ -592,6 +630,10 @@ class CreateCodeSigningConfigRequest(ServiceRequest):
 
 class CreateCodeSigningConfigResponse(TypedDict, total=False):
     CodeSigningConfig: CodeSigningConfig
+
+
+class SelfManagedKafkaEventSourceConfig(TypedDict, total=False):
+    ConsumerGroupId: Optional[URI]
 
 
 FunctionResponseTypeList = List[FunctionResponseType]
@@ -660,6 +702,8 @@ class CreateEventSourceMappingRequest(ServiceRequest):
     SourceAccessConfigurations: Optional[SourceAccessConfigurations]
     SelfManagedEventSource: Optional[SelfManagedEventSource]
     FunctionResponseTypes: Optional[FunctionResponseTypeList]
+    AmazonManagedKafkaEventSourceConfig: Optional[AmazonManagedKafkaEventSourceConfig]
+    SelfManagedKafkaEventSourceConfig: Optional[SelfManagedKafkaEventSourceConfig]
 
 
 class EphemeralStorage(TypedDict, total=False):
@@ -841,6 +885,8 @@ class EventSourceMappingConfiguration(TypedDict, total=False):
     MaximumRetryAttempts: Optional[MaximumRetryAttemptsEventSourceMapping]
     TumblingWindowInSeconds: Optional[TumblingWindowInSeconds]
     FunctionResponseTypes: Optional[FunctionResponseTypeList]
+    AmazonManagedKafkaEventSourceConfig: Optional[AmazonManagedKafkaEventSourceConfig]
+    SelfManagedKafkaEventSourceConfig: Optional[SelfManagedKafkaEventSourceConfig]
 
 
 EventSourceMappingsList = List[EventSourceMappingConfiguration]
@@ -1087,25 +1133,25 @@ class GetProvisionedConcurrencyConfigResponse(TypedDict, total=False):
 
 
 class InvocationRequest(ServiceRequest):
+    Payload: Optional[IO[Blob]]
     FunctionName: NamespacedFunctionName
     InvocationType: Optional[InvocationType]
     LogType: Optional[LogType]
     ClientContext: Optional[String]
-    Payload: Optional[Blob]
     Qualifier: Optional[Qualifier]
 
 
 class InvocationResponse(TypedDict, total=False):
+    Payload: Optional[Union[Blob, IO[Blob], Iterable[Blob]]]
     StatusCode: Optional[Integer]
     FunctionError: Optional[String]
     LogResult: Optional[String]
-    Payload: Optional[Blob]
     ExecutedVersion: Optional[Version]
 
 
 class InvokeAsyncRequest(ServiceRequest):
+    InvokeArgs: IO[BlobStream]
     FunctionName: NamespacedFunctionName
-    InvokeArgs: BlobStream
 
 
 class InvokeAsyncResponse(TypedDict, total=False):
@@ -1557,6 +1603,8 @@ class LambdaApi:
         source_access_configurations: SourceAccessConfigurations = None,
         self_managed_event_source: SelfManagedEventSource = None,
         function_response_types: FunctionResponseTypeList = None,
+        amazon_managed_kafka_event_source_config: AmazonManagedKafkaEventSourceConfig = None,
+        self_managed_kafka_event_source_config: SelfManagedKafkaEventSourceConfig = None,
     ) -> EventSourceMappingConfiguration:
         raise NotImplementedError
 
@@ -1774,7 +1822,7 @@ class LambdaApi:
         invocation_type: InvocationType = None,
         log_type: LogType = None,
         client_context: String = None,
-        payload: Blob = None,
+        payload: IO[Blob] = None,
         qualifier: Qualifier = None,
     ) -> InvocationResponse:
         raise NotImplementedError
@@ -1784,7 +1832,7 @@ class LambdaApi:
         self,
         context: RequestContext,
         function_name: NamespacedFunctionName,
-        invoke_args: BlobStream,
+        invoke_args: IO[BlobStream],
     ) -> InvokeAsyncResponse:
         raise NotImplementedError
 

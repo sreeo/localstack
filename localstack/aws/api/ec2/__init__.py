@@ -28,6 +28,7 @@ CarrierGatewayId = str
 CarrierGatewayMaxResults = int
 ClientVpnAssociationId = str
 ClientVpnEndpointId = str
+CloudWatchLogGroupArn = str
 CoipPoolId = str
 CoipPoolMaxResults = int
 ConnectionNotificationId = str
@@ -1586,6 +1587,48 @@ class InstanceType(str):
     c7g_12xlarge = "c7g.12xlarge"
     c7g_16xlarge = "c7g.16xlarge"
     mac2_metal = "mac2.metal"
+    c6id_large = "c6id.large"
+    c6id_xlarge = "c6id.xlarge"
+    c6id_2xlarge = "c6id.2xlarge"
+    c6id_4xlarge = "c6id.4xlarge"
+    c6id_8xlarge = "c6id.8xlarge"
+    c6id_12xlarge = "c6id.12xlarge"
+    c6id_16xlarge = "c6id.16xlarge"
+    c6id_24xlarge = "c6id.24xlarge"
+    c6id_32xlarge = "c6id.32xlarge"
+    c6id_metal = "c6id.metal"
+    m6id_large = "m6id.large"
+    m6id_xlarge = "m6id.xlarge"
+    m6id_2xlarge = "m6id.2xlarge"
+    m6id_4xlarge = "m6id.4xlarge"
+    m6id_8xlarge = "m6id.8xlarge"
+    m6id_12xlarge = "m6id.12xlarge"
+    m6id_16xlarge = "m6id.16xlarge"
+    m6id_24xlarge = "m6id.24xlarge"
+    m6id_32xlarge = "m6id.32xlarge"
+    m6id_metal = "m6id.metal"
+    r6id_large = "r6id.large"
+    r6id_xlarge = "r6id.xlarge"
+    r6id_2xlarge = "r6id.2xlarge"
+    r6id_4xlarge = "r6id.4xlarge"
+    r6id_8xlarge = "r6id.8xlarge"
+    r6id_12xlarge = "r6id.12xlarge"
+    r6id_16xlarge = "r6id.16xlarge"
+    r6id_24xlarge = "r6id.24xlarge"
+    r6id_32xlarge = "r6id.32xlarge"
+    r6id_metal = "r6id.metal"
+    r6a_large = "r6a.large"
+    r6a_xlarge = "r6a.xlarge"
+    r6a_2xlarge = "r6a.2xlarge"
+    r6a_4xlarge = "r6a.4xlarge"
+    r6a_8xlarge = "r6a.8xlarge"
+    r6a_12xlarge = "r6a.12xlarge"
+    r6a_16xlarge = "r6a.16xlarge"
+    r6a_24xlarge = "r6a.24xlarge"
+    r6a_32xlarge = "r6a.32xlarge"
+    r6a_48xlarge = "r6a.48xlarge"
+    r6a_metal = "r6a.metal"
+    p4de_24xlarge = "p4de.24xlarge"
 
 
 class InstanceTypeHypervisor(str):
@@ -2155,6 +2198,9 @@ class ResourceType(str):
     vpn_connection = "vpn-connection"
     vpn_gateway = "vpn-gateway"
     vpc_flow_log = "vpc-flow-log"
+    capacity_reservation_fleet = "capacity-reservation-fleet"
+    traffic_mirror_filter_rule = "traffic-mirror-filter-rule"
+    vpc_endpoint_connection_device_type = "vpc-endpoint-connection-device-type"
 
 
 class RootDeviceType(str):
@@ -4480,6 +4526,18 @@ class ClientVpnRoute(TypedDict, total=False):
 ClientVpnRouteSet = List[ClientVpnRoute]
 
 
+class CloudWatchLogOptions(TypedDict, total=False):
+    LogEnabled: Optional[Boolean]
+    LogGroupArn: Optional[String]
+    LogOutputFormat: Optional[String]
+
+
+class CloudWatchLogOptionsSpecification(TypedDict, total=False):
+    LogEnabled: Optional[Boolean]
+    LogGroupArn: Optional[CloudWatchLogGroupArn]
+    LogOutputFormat: Optional[String]
+
+
 class CoipAddressUsage(TypedDict, total=False):
     AllocationId: Optional[String]
     AwsAccountId: Optional[String]
@@ -6482,9 +6540,13 @@ class CreateSnapshotRequest(ServiceRequest):
     DryRun: Optional[Boolean]
 
 
+VolumeIdStringList = List[VolumeId]
+
+
 class InstanceSpecification(TypedDict, total=False):
     InstanceId: Optional[InstanceId]
     ExcludeBootVolume: Optional[Boolean]
+    ExcludeDataVolumeIds: Optional[VolumeIdStringList]
 
 
 class CreateSnapshotsRequest(ServiceRequest):
@@ -7256,6 +7318,10 @@ class CreateVpcResult(TypedDict, total=False):
     Vpc: Optional[Vpc]
 
 
+class VpnTunnelLogOptionsSpecification(TypedDict, total=False):
+    CloudWatchLogOptions: Optional[CloudWatchLogOptionsSpecification]
+
+
 class IKEVersionsRequestListValue(TypedDict, total=False):
     Value: Optional[String]
 
@@ -7324,6 +7390,7 @@ class VpnTunnelOptionsSpecification(TypedDict, total=False):
     Phase2DHGroupNumbers: Optional[Phase2DHGroupNumbersRequestList]
     IKEVersions: Optional[IKEVersionsRequestList]
     StartupAction: Optional[String]
+    LogOptions: Optional[VpnTunnelLogOptionsSpecification]
 
 
 VpnTunnelOptionsSpecificationsList = List[VpnTunnelOptionsSpecification]
@@ -7371,6 +7438,10 @@ class VpnStaticRoute(TypedDict, total=False):
 
 
 VpnStaticRouteList = List[VpnStaticRoute]
+
+
+class VpnTunnelLogOptions(TypedDict, total=False):
+    CloudWatchLogOptions: Optional[CloudWatchLogOptions]
 
 
 class IKEVersionsListValue(TypedDict, total=False):
@@ -7442,6 +7513,7 @@ class TunnelOption(TypedDict, total=False):
     Phase2DHGroupNumbers: Optional[Phase2DHGroupNumbersList]
     IkeVersions: Optional[IKEVersionsList]
     StartupAction: Optional[String]
+    LogOptions: Optional[VpnTunnelLogOptions]
 
 
 TunnelOptionsList = List[TunnelOption]
@@ -11788,9 +11860,6 @@ class DescribeVolumeAttributeResult(TypedDict, total=False):
     VolumeId: Optional[String]
 
 
-VolumeIdStringList = List[VolumeId]
-
-
 class DescribeVolumeStatusRequest(ServiceRequest):
     Filters: Optional[FilterList]
     MaxResults: Optional[Integer]
@@ -14582,6 +14651,7 @@ class ModifyVpnTunnelOptionsSpecification(TypedDict, total=False):
     Phase2DHGroupNumbers: Optional[Phase2DHGroupNumbersRequestList]
     IKEVersions: Optional[IKEVersionsRequestList]
     StartupAction: Optional[String]
+    LogOptions: Optional[VpnTunnelLogOptionsSpecification]
 
 
 class ModifyVpnTunnelOptionsRequest(ServiceRequest):

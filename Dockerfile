@@ -1,7 +1,7 @@
 ARG IMAGE_TYPE=full
 
 # java-builder: Stage to build a custom JRE (with jlink)
-FROM python:3.10.5-slim-buster@sha256:e7fce98575fe05809087b7d6aba98ad1df3dd840504da672da50a7af9e22fdf1 as java-builder
+FROM python:3.10.6-slim-buster@sha256:f17c94905c9cd56dce9ef6ce63229045a75f395f7b5b68eb69ef617079c51848 as java-builder
 ARG TARGETARCH
 
 # install OpenJDK 11
@@ -34,15 +34,15 @@ jdk.localedata --include-locales en,th \
 
 
 # base: Stage which installs necessary runtime dependencies (OS packages, java, maven,...)
-FROM python:3.10.5-slim-buster@sha256:e7fce98575fe05809087b7d6aba98ad1df3dd840504da672da50a7af9e22fdf1 as base
+FROM python:3.10.6-slim-buster@sha256:f17c94905c9cd56dce9ef6ce63229045a75f395f7b5b68eb69ef617079c51848 as base
 ARG TARGETARCH
 
 # Install runtime OS package dependencies
 RUN apt-get update && \
         # Install dependencies to add additional repos
         apt-get install -y --no-install-recommends ca-certificates curl && \
-        # Setup Node 14 Repo
-        curl -sL https://deb.nodesource.com/setup_14.x | bash - && \
+        # Setup Node 18 Repo
+        curl -sL https://deb.nodesource.com/setup_18.x | bash - && \
         # Install Packages
         apt-get update && \
         apt-get install -y --no-install-recommends \
@@ -233,9 +233,6 @@ RUN mkdir -p /.npm && \
 # Install the latest version of awslocal globally
 RUN pip3 install --upgrade awscli awscli-local requests
 
-# Adds the results of `make init` that are explicitly include in .dockerignore to the image.
-# `make init` needs to be executed before building the image, because some package installers need docker themselves.
-ADD .filesystem/usr/lib/localstack /usr/lib/localstack
 # Add the code in the last step
 ADD localstack/ localstack/
 
